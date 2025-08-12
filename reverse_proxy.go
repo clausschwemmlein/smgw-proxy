@@ -15,7 +15,7 @@ import (
 
 func main() {
 	// Kommandozeilenparameter definieren
-	targetIP := flag.String("target", "10.11.120.2", "IP-Adresse des HAN Ports des Smart Meter Gateways")
+	targetIP := flag.String("target", "192.168.1.200", "IP-Adresse des HAN Ports des Smart Meter Gateways")
 	listenPort := flag.String("port", "8080", "Port, auf dem der SMGW-Proxy lauschen soll")
 	flag.Parse()
 
