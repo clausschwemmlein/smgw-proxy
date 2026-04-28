@@ -73,6 +73,11 @@ sudo apt install golang git -y
 # Go-Proxy kompilieren
 git clone https://github.com/klacol/smgw-proxy
 cd smgw-proxy
+
+# Log-Verzeichnis anlegen
+sudo mkdir -p /var/log/smgw-proxy
+sudo chown pi:pi /var/log/smgw-proxy
+
 ```
 
 Um den reverse_proxy nach jedem Neustart automatisch zu starten und die Logs einzusehen, empfiehlt sich ein systemd-Service. So geht’s:
@@ -87,7 +92,7 @@ Description=Reverse Proxy für SMGW
 After=network-online.target
 
 [Service]
-ExecStart=/home/pi/smgw-proxy/reverse_proxy
+ExecStart=/home/pi/smgw-proxy/reverse_proxy -logdir /var/log/smgw-proxy
 WorkingDirectory=/home/pi/smgw-proxy
 Restart=always
 User=pi
@@ -114,10 +119,78 @@ Proxy aktualisieren
 # Go-Proxy kompilieren
 cd smgw-proxy
 git pull
+sudo systemctl stop reverse_proxy
 go build -o reverse_proxy reverse_proxy.go
 sudo systemctl restart reverse_proxy
 journalctl -u reverse_proxy -f
 ```
+
+## Log-Dateien
+
+Der Proxy unterstützt das Speichern von Log-Dateien mit automatischer Rotation. Standardmäßig werden die Logs alle 24 Stunden rotiert, wobei alte Log-Dateien für bis zu 3 Tage aufbewahrt werden.
+
+### Konfiguration der Log-Dateien
+
+Der Proxy kann mit folgenden Parametern für das Logging konfiguriert werden:
+
+```shell
+./reverse_proxy -logdir /var/log/smgw-proxy -logfile proxy.log
+```
+
+**Parameter:**
+- `-logdir`: Verzeichnis zum Speichern der Log-Dateien (Standard: ./logs)
+- `-logfile`: Name der Log-Datei (Standard: proxy.log)
+
+Das Log-Verzeichnis wird automatisch erstellt, falls es nicht existiert. Die Log-Dateien werden mit Zeitstempel im Format `YYYY-MM-DD_HH-MM-SS_proxy.log` gespeichert und nach 24 Stunden automatisch rotiert.
+
+### Zugriff auf die Log-Dateien
+
+Die Log-Dateien können direkt im angegebenen Verzeichnis eingesehen werden:
+
+```shell
+ls -la /var/log/smgw-proxy
+cat /var/log/smgw-proxy/2025-09-20_12-00-00_proxy.log
+```
+
+Wenn der Proxy als systemd-Service konfiguriert ist, werden die Logs zusätzlich auch im Journal gespeichert und können mit `journalctl` abgerufen werden:
+
+```shell
+journalctl -u reverse_proxy -f
+```
+
+## Trust On First Use (TOFU) für TLS-Verbindungen
+
+Der Proxy unterstützt Trust On First Use (TOFU) für sichere TLS-Verbindungen mit dem Smart Meter Gateway. Dies ist besonders wichtig, da viele SMGW nur über HTTPS erreichbar sind und selbstsignierte Zertifikate verwenden.
+
+### Was ist TOFU?
+
+TOFU (Trust On First Use) ist ein Sicherheitskonzept, bei dem bei der ersten Verbindung zu einem Server dessen Zertifikat automatisch als vertrauenswürdig akzeptiert und gespeichert wird. Bei allen nachfolgenden Verbindungen wird das vom Server präsentierte Zertifikat mit dem gespeicherten verglichen. Dies bietet Schutz vor Man-in-the-Middle-Angriffen, ohne dass Zertifikate manuell installiert werden müssen.
+
+### Funktionsweise
+
+1. **Erste Verbindung**: Bei der ersten Verbindung zum SMGW wird das Zertifikat akzeptiert und in einem konfigurierbaren Verzeichnis gespeichert.
+2. **Folgende Verbindungen**: Bei allen nachfolgenden Verbindungen wird das präsentierte Zertifikat mit dem gespeicherten verglichen.
+3. **Zertifikatswechsel**: Wenn sich das Zertifikat ändert, wird die Verbindung abgelehnt und eine Warnmeldung ausgegeben. Dies könnte auf einen Man-in-the-Middle-Angriff hindeuten oder darauf, dass das Zertifikat erneuert wurde.
+
+### Konfiguration
+
+Der Proxy kann mit dem Parameter `-certdir` konfiguriert werden, um das Verzeichnis für die TOFU-Zertifikatsspeicherung anzugeben:
+
+```shell
+./reverse_proxy -target 10.11.120.2 -port 8080 -certdir ./zertifikate
+```
+
+**Parameter:**
+- `-target`: IP-Adresse des HAN-Ports des Smart Meter Gateways (Standard: 10.11.120.2)
+- `-port`: Port, auf dem der SMGW-Proxy lauschen soll (Standard: 8080)
+- `-certdir`: Verzeichnis zum Speichern der TOFU-Zertifikate (Standard: ./certs)
+
+### Sicherheitshinweise
+
+- Das TOFU-Prinzip bietet eine gute Sicherheit, wenn die erste Verbindung nicht manipuliert wurde.
+- Wenn Sie eine Warnmeldung über ein geändertes Zertifikat erhalten, sollten Sie dies überprüfen:
+  - Bei einem legitimen Zertifikatswechsel: Löschen Sie die gespeicherte Zertifikatsdatei im Zertifikatsverzeichnis.
+  - Bei Verdacht auf einen Angriff: Überprüfen Sie Ihre Netzwerksicherheit.
 
 ## Aufrufen:
 
